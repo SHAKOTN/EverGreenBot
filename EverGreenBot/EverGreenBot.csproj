@@ -13,4 +13,7 @@
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="4.4.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Modules\" />
+  </ItemGroup>
 </Project>
