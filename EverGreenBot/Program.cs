@@ -1,19 +1,29 @@
-﻿using Discord;
-using Discord.WebSocket;
-
-using System;
+﻿using System;
 using System.IO;
-using Microsoft.Extensions.Configuration;
+using System.Reflection;
 using System.Threading.Tasks;
+
+using Microsoft.Extensions.DependencyInjection;
+
+using Discord;
+using Discord.WebSocket;
+using Discord.Commands;
+
+using Microsoft.Extensions.Configuration;
+
 
 namespace EverGreen
 {
     public class Program
     {
         private DiscordSocketClient _client;
+        private CommandService _commands;
+        private IServiceProvider _services;
+
         public static IConfiguration Configuration { get; set; }
 
         public static void Main(string[] args) {
+            
             var builder = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json");
@@ -28,9 +38,16 @@ namespace EverGreen
             var _config = new DiscordSocketConfig { MessageCacheSize = 100 };
 
             _client = new DiscordSocketClient(_config);
+            _commands = new CommandService();
+
+            _services = new ServiceCollection()
+                .AddSingleton(_client)
+                .AddSingleton(_commands)
+                .BuildServiceProvider();
+            
+            await InstallCommandsAsync();
 
             _client.Log += Log;
-            _client.MessageReceived += MessageReceived;
 
             await _client.LoginAsync(TokenType.Bot, Configuration["AppConfiguration:token"]);
             await _client.StartAsync();
@@ -39,18 +56,36 @@ namespace EverGreen
             await Task.Delay(-1);
         }
 
+        public async Task InstallCommandsAsync()
+        {
+            _client.MessageReceived += HandleCommandAsync;
+
+            await _commands.AddModulesAsync(Assembly.GetEntryAssembly());
+        }
+
+        private async Task HandleCommandAsync(SocketMessage messageParam)
+        {
+            var message = messageParam as SocketUserMessage;
+            if (message == null) return;
+
+            int argPos = 0;
+
+            if (!(message.HasCharPrefix('!', ref argPos) || message.HasMentionPrefix(_client.CurrentUser, ref argPos)))
+            {
+                return;
+            }
+
+            var context = new SocketCommandContext(_client, message);
+            var result = await _commands.ExecuteAsync(context, argPos, _services);
+
+            if (!result.IsSuccess)
+                await context.Channel.SendMessageAsync(result.ErrorReason);
+        }
+
         private Task Log(LogMessage msg)
         {
             Console.WriteLine(msg.ToString());
             return Task.CompletedTask;
-        }
-
-        private async Task MessageReceived(SocketMessage message)
-        {
-            if (message.Content == "!ping")
-            {
-                await message.Channel.SendMessageAsync("Pong!");
-            }
         }
     }
 }
